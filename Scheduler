@@ -1,0 +1,206 @@
+ YarnClient yarnClient = YarnClient.createYarnClient();
+  yarnClient.init(conf);
+  yarnClient.start();
+  YarnClientApplication app = yarnClient.createApplication();
+  GetNewApplicationResponse appResponse = app.getNewApplicationResponse();
+ApplicationSubmissionContext appContext = app.getApplicationSubmissionContext();
+ApplicationId appId = appContext.getApplicationId();
+appContext.setKeepContainersAcrossApplicationAttempts(keepContainers);
+appContext.setApplicationName(appName);
+Map<String, LocalResource> localResources = new HashMap<String, LocalResource>();
+LOG.info("Copy App Master jar from local filesystem and add to local environment");
+FileSystem fs = FileSystem.get(conf);
+addToLocalResources(fs, appMasterJar, appMasterJarPath, appId.toString(),
+    localResources, null);
+if (!log4jPropFile.isEmpty()) {
+  addToLocalResources(fs, log4jPropFile, log4jPath, appId.toString(),
+      localResources, null);
+}
+String hdfsShellScriptLocation = "";
+long hdfsShellScriptLen = 0;
+long hdfsShellScriptTimestamp = 0;
+if (!shellScriptPath.isEmpty()) {
+  Path shellSrc = new Path(shellScriptPath);
+  String shellPathSuffix =
+      appName + "/" + appId.toString() + "/" + SCRIPT_PATH;
+  Path shellDst =
+      new Path(fs.getHomeDirectory(), shellPathSuffix);
+  fs.copyFromLocalFile(false, true, shellSrc, shellDst);
+  hdfsShellScriptLocation = shellDst.toUri().toString();
+  FileStatus shellFileStatus = fs.getFileStatus(shellDst);
+  hdfsShellScriptLen = shellFileStatus.getLen();
+  hdfsShellScriptTimestamp = shellFileStatus.getModificationTime();
+}
+if (!shellCommand.isEmpty()) {
+  addToLocalResources(fs, null, shellCommandPath, appId.toString(),
+      localResources, shellCommand);
+}
+if (shellArgs.length > 0) {
+  addToLocalResources(fs, null, shellArgsPath, appId.toString(),
+      localResources, StringUtils.join(shellArgs, " "));
+}
+LOG.info("Set the environment for the application master");
+Map<String, String> env = new HashMap<String, String>();
+env.put(DSConstants.DISTRIBUTEDSHELLSCRIPTLOCATION, hdfsShellScriptLocation);
+env.put(DSConstants.DISTRIBUTEDSHELLSCRIPTTIMESTAMP, Long.toString(hdfsShellScriptTimestamp));
+env.put(DSConstants.DISTRIBUTEDSHELLSCRIPTLEN, Long.toString(hdfsShellScriptLen));
+StringBuilder classPathEnv = new StringBuilder(Environment.CLASSPATH.$$())
+  .append(ApplicationConstants.CLASS_PATH_SEPARATOR).append("./*");
+for (String c : conf.getStrings(
+    YarnConfiguration.YARN_APPLICATION_CLASSPATH,
+    YarnConfiguration.DEFAULT_YARN_CROSS_PLATFORM_APPLICATION_CLASSPATH)) {
+  classPathEnv.append(ApplicationConstants.CLASS_PATH_SEPARATOR);
+  classPathEnv.append(c.trim());
+}
+classPathEnv.append(ApplicationConstants.CLASS_PATH_SEPARATOR).append(
+  "./log4j.properties");
+Vector<CharSequence> vargs = new Vector<CharSequence>(30);
+LOG.info("Setting up app master command");
+vargs.add(Environment.JAVA_HOME.$$() + "/bin/java");
+vargs.add("-Xmx" + amMemory + "m");
+vargs.add(appMasterMainClass);
+vargs.add("--container_memory " + String.valueOf(containerMemory));
+vargs.add("--container_vcores " + String.valueOf(containerVirtualCores));
+vargs.add("--num_containers " + String.valueOf(numContainers));
+vargs.add("--priority " + String.valueOf(shellCmdPriority));
+for (Map.Entry<String, String> entry : shellEnv.entrySet()) {
+  vargs.add("--shell_env " + entry.getKey() + "=" + entry.getValue());
+}
+if (debugFlag) {
+  vargs.add("--debug");
+}
+vargs.add("1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/AppMaster.stdout");
+vargs.add("2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/AppMaster.stderr");
+StringBuilder command = new StringBuilder();
+for (CharSequence str : vargs) {
+  command.append(str).append(" ");
+}
+LOG.info("Completed setting up app master command " + command.toString());
+List<String> commands = new ArrayList<String>();
+commands.add(command.toString());
+ContainerLaunchContext amContainer = ContainerLaunchContext.newInstance(
+  localResources, env, commands, null, null, null);
+Resource capability = Resource.newInstance(amMemory, amVCores);
+appContext.setResource(capability);
+if (UserGroupInformation.isSecurityEnabled()) {
+  Credentials credentials = new Credentials();
+  String tokenRenewer = conf.get(YarnConfiguration.RM_PRINCIPAL);
+  if (tokenRenewer == null | | tokenRenewer.length() == 0) {
+    throw new IOException(
+      "Can't get Master Kerberos principal for the RM to use as renewer");
+  }
+  final Token<?> tokens[] =
+      fs.addDelegationTokens(tokenRenewer, credentials);
+  if (tokens != null) {
+    for (Token<?> token : tokens) {
+      LOG.info("Got dt for " + fs.getUri() + "; " + token);
+    }
+  }
+  DataOutputBuffer dob = new DataOutputBuffer();
+  credentials.writeTokenStorageToStream(dob);
+  ByteBuffer fsTokens = ByteBuffer.wrap(dob.getData(), 0, dob.getLength());
+  amContainer.setTokens(fsTokens);
+}
+appContext.setAMContainerSpec(amContainer);
+Priority pri = Priority.newInstance(amPriority);
+appContext.setPriority(pri);
+appContext.setQueue(amQueue);
+yarnClient.submitApplication(appContext);
+ApplicationReport report = yarnClient.getApplicationReport(appId);
+yarnClient.killApplication(appId);
+Map<String, String> envs = System.getenv();
+String containerIdString =
+    envs.get(ApplicationConstants.AM_CONTAINER_ID_ENV);
+if (containerIdString == null) {
+  throw new IllegalArgumentException(
+      "ContainerId not set in the environment");
+}
+ContainerId containerId = ConverterUtils.toContainerId(containerIdString);
+ApplicationAttemptId appAttemptID = containerId.getApplicationAttemptId();
+  AMRMClientAsync.CallbackHandler allocListener = new RMCallbackHandler();
+  amRMClient = AMRMClientAsync.createAMRMClientAsync(1000, allocListener);
+  amRMClient.init(conf);
+  amRMClient.start();
+  containerListener = createNMCallbackHandler();
+  nmClientAsync = new NMClientAsyncImpl(containerListener);
+  nmClientAsync.init(conf);
+  nmClientAsync.start();
+appMasterHostname = NetUtils.getHostname();
+RegisterApplicationMasterResponse response = amRMClient
+    .registerApplicationMaster(appMasterHostname, appMasterRpcPort,
+        appMasterTrackingUrl);
+int maxMem = response.getMaximumResourceCapability().getMemory();
+LOG.info("Max mem capabililty of resources in this cluster " + maxMem);
+int maxVCores = response.getMaximumResourceCapability().getVirtualCores();
+LOG.info("Max vcores capabililty of resources in this cluster " + maxVCores);
+if (containerMemory > maxMem) {
+  LOG.info("Container memory specified above max threshold of cluster."
+      + " Using max value." + ", specified=" + containerMemory + ", max="
+      + maxMem);
+  containerMemory = maxMem;
+}
+if (containerVirtualCores > maxVCores) {
+  LOG.info("Container virtual cores specified above max threshold of  cluster."
+    + " Using max value." + ", specified=" + containerVirtualCores + ", max="
+    + maxVCores);
+  containerVirtualCores = maxVCores;
+}
+List<Container> previousAMRunningContainers =
+    response.getContainersFromPreviousAttempts();
+LOG.info("Received " + previousAMRunningContainers.size()
+        + " previous AM's running containers on AM registration.");
+        List<Container> previousAMRunningContainers =
+    response.getContainersFromPreviousAttempts();
+List<Container> previousAMRunningContainers =
+    response.getContainersFromPreviousAttempts();
+LOG.info("Received " + previousAMRunningContainers.size()
+    + " previous AM's running containers on AM registration.");
+int numTotalContainersToRequest =
+    numTotalContainers - previousAMRunningContainers.size();
+for (int i = 0; i < numTotalContainersToRequest; ++i) {
+  ContainerRequest containerAsk = setupContainerAskForRM();
+  amRMClient.addContainerRequest(containerAsk);
+}
+private ContainerRequest setupContainerAskForRM() {
+  Priority pri = Priority.newInstance(requestPriority);
+  Resource capability = Resource.newInstance(containerMemory,
+    containerVirtualCores);
+
+  ContainerRequest request = new ContainerRequest(capability, null, null,
+      pri);
+  LOG.info("Requested container ask: " + request.toString());
+  return request;
+}
+public float getProgress() {
+  // set progress to deliver to RM on next heartbeat
+  float progress = (float) numCompletedContainers.get()
+      / numTotalContainers;
+  return progress;
+}
+Vector<CharSequence> vargs = new Vector<CharSequence>(5);
+vargs.add(shellCommand);
+if (!scriptPath.isEmpty()) {
+  vargs.add(Shell.WINDOWS ? ExecBatScripStringtPath
+    : ExecShellStringPath);
+}
+vargs.add(shellArgs);
+vargs.add("1>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stdout");
+vargs.add("2>" + ApplicationConstants.LOG_DIR_EXPANSION_VAR + "/stderr");
+StringBuilder command = new StringBuilder();
+for (CharSequence str : vargs) {
+  command.append(str).append(" ");
+}
+List<String> commands = new ArrayList<String>();
+commands.add(command.toString());
+ContainerLaunchContext ctx = ContainerLaunchContext.newInstance(
+  localResources, shellEnv, commands, null, allTokens.duplicate(), null);
+containerListener.addContainer(container.getId(), container);
+nmClientAsync.startContainerAsync(container, ctx);
+try {
+  amRMClient.unregisterApplicationMaster(appStatus, appMessage, null);
+} catch (YarnException ex) {
+  LOG.error("Failed to unregister application", ex);
+} catch (IOException e) {
+  LOG.error("Failed to unregister application", e);
+}
+amRMClient.stop();
