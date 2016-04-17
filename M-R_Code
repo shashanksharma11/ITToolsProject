@@ -1,0 +1,188 @@
+-- Data Loading (load.hql)
+
+DROP TABLE IF EXISTS catalogue;
+CREATE TABLE catalogue (ProductColorId INT, 
+                      GenderLabel STRING,
+                      SupplierColorLabel STRING, 
+                      SeasonLabel STRING)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Catalogue_20151101.csv" OVERWRITE INTO TABLE catalogue;
+DROP TABLE IF EXISTS customer;
+CREATE TABLE customer (CustomerId INT,
+                       DomainCode STRING,
+                       BirthDate DATE,
+                       Gender STRING,
+                       Size int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Customer_20151101.csv" OVERWRITE INTO TABLE customer;
+DROP TABLE IF EXISTS order;
+CREATE TABLE order (OrderNumber int,
+                    VariantId int, 
+                    CustomerId int,
+                    Quantity int,
+                    UnitPrice int,
+                    OrderCreationDate Date)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Order_20151101.csv" OVERWRITE INTO TABLE order;
+DROP TABLE IF EXISTS reference;
+CREATE TABLE reference (VariantId int,
+                    ProductColorId int,
+                    ProductId int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Product_Reference_20151101.csv" OVERWRITE INTO TABLE reference;
+DROP TABLE IF EXISTS catalogue;
+CREATE TABLE catalogue (ProductColorId INT, 
+                      GenderLabel STRING,
+                      SupplierColorLabel STRING, 
+                      SeasonLabel STRING)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Catalogue_20151102.csv" OVERWRITE INTO TABLE catalogue;
+DROP TABLE IF EXISTS customer;
+CREATE TABLE customer (CustomerId INT,
+                       DomainCode STRING,
+                       BirthDate DATE,
+                       Gender STRING,
+                       Size int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Customer_20151102.csv" OVERWRITE INTO TABLE customer;
+DROP TABLE IF EXISTS order;
+CREATE TABLE order (OrderNumber int,
+                    VariantId int, 
+                    CustomerId int,
+                    Quantity int,
+                    UnitPrice int,
+                    OrderCreationDate Date)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Order_20151102.csv" OVERWRITE INTO TABLE order;
+DROP TABLE IF EXISTS reference;
+CREATE TABLE reference (VariantId int,
+                    ProductColorId int,
+                    ProductId int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Product_Reference_20151102.csv" OVERWRITE INTO TABLE reference;
+DROP TABLE IF EXISTS catalogue;
+CREATE TABLE catalogue (ProductColorId INT, 
+                      GenderLabel STRING,
+                      SupplierColorLabel STRING, 
+                      SeasonLabel STRING)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Catalogue_20151103.csv" OVERWRITE INTO TABLE catalogue;
+DROP TABLE IF EXISTS customer;
+CREATE TABLE customer (CustomerId INT,
+                       DomainCode STRING,
+                       BirthDate DATE,
+                       Gender STRING,
+                       Size int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Customer_20151103.csv" OVERWRITE INTO TABLE customer;
+DROP TABLE IF EXISTS order;
+CREATE TABLE order (OrderNumber int,
+                    VariantId int, 
+                    CustomerId int,
+                    Quantity int,
+                    UnitPrice int,
+                    OrderCreationDate Date)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Order_20151103.csv" OVERWRITE INTO TABLE order;
+DROP TABLE IF EXISTS reference;
+CREATE TABLE reference (VariantId int,
+                    ProductColorId int,
+                    ProductId int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Product_Reference_20151103.csv" OVERWRITE INTO TABLE reference;
+DROP TABLE IF EXISTS variant;
+CREATE TABLE reference (VariantId int,
+                    MinSize int,
+                    MaxSize int,
+	        Size int)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/Variant.csv" OVERWRITE INTO TABLE variant;
+
+-- Web Scraping of Weather Data (scrape.py)
+
+import urllib2
+from bs4 import BeautifulSoup
+url = "http://www.wunderground.com/history/airport/KBUF/2009/" + str(m) + "/" + str(d) + "/DailyHistory.html"
+page = urllib2.urlopen(url)
+soup = BeautifulSoup(page)
+dayTemp = soup.find_all(attrs={"class":"nobr"})[4].span.string
+if len(str(m)) &lt; 2:
+	mStamp = '0' + str(m)
+else:
+	mStamp = str(m)
+if len(str(d)) &lt; 2:
+	dStamp = '0' + str(d)
+else:
+	dStamp = str(d)
+f.write(timestamp + ',' + dayTemp + '\n')
+f.close()
+
+
+
+
+
+
+
+
+-- Aggregations (agg.hql)
+
+SELECT
+ customer.customerid,
+ order.customerid,
+CASE customer.gender WHEN 'Homme' THEN 1 ELSE WHEN 'Femme' THEN 0 END
+gender,
+CASE customer.size WHEN < 20 THEN 1 ELSE WHEN > 20 THEN 0 END
+size,
+
+CREATE TABLE count(customerid)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/sum.csv";
+
+CREATE TABLE count(customerid)
+ROW FORMAT DELIMITED 
+FIELDS TERMINATED BY '\t' 
+LINES TERMINATED BY '\n'
+STORED AS TEXTFILE;
+LOAD DATA INPATH "/user/hue/data_tool/sum.csv";
